@@ -12,6 +12,7 @@ const timelineRoutes = require("./routes/timeline");
 const experienceRoutes = require("./routes/experiences");
 const messageRoutes = require("./routes/messages");
 const notificationRoutes = require("./routes/notifications");
+const adminRoutes = require("./routes/admin");
 const searchRoutes = require("./routes/search");
 
 async function ensureAdminUser() {
@@ -73,11 +74,20 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", async (_req, res) => {
+  let dbOk = false;
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbOk = true;
+  } catch {
+    dbOk = false;
+  }
+
   res.json({
     status: "ok",
     service: "LifeVerse API",
-    version: "2",
+    version: "3",
+    dbConnected: dbOk,
     googleConfigured: !!(
       process.env.GOOGLE_CLIENT_ID &&
       !process.env.GOOGLE_CLIENT_ID.includes("your-google-client-id")

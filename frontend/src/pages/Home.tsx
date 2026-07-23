@@ -57,10 +57,10 @@ export default function Home() {
           description="Follow friends or post your first moment to start building your life story."
           action={
             <Link
-              to="/create"
+              to="/search"
               className="rounded-xl bg-ape-lime/10 px-5 py-2.5 text-sm font-semibold text-ape-lime transition hover:bg-ape-lime/20"
             >
-              Post your first moment
+              Search for friends
             </Link>
           }
         />

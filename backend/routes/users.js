@@ -119,36 +119,62 @@ router.post("/:username/follow", authMiddleware, async (req, res) => {
 
     if (existing) {
       if (existing.status === "ACCEPTED") {
-        return res.status(409).json({ error: "Already following" });
+        return res.status(409).json({ error: "Already friends" });
       }
       await prisma.follow.update({
         where: { id: existing.id },
         data: { status: "ACCEPTED" },
       });
-      return res.json({ status: "ACCEPTED" });
+    } else {
+      await prisma.follow.create({
+        data: {
+          followerId: req.user.id,
+          followingId: target.id,
+          status: "ACCEPTED",
+        },
+      });
     }
 
-    await prisma.follow.create({
-      data: {
-        followerId: req.user.id,
-        followingId: target.id,
-        status: "ACCEPTED",
+    // Mutual friendship so both users see each other's posts in feed
+    const reverse = await prisma.follow.findUnique({
+      where: {
+        followerId_followingId: {
+          followerId: target.id,
+          followingId: req.user.id,
+        },
       },
     });
+
+    if (reverse) {
+      if (reverse.status !== "ACCEPTED") {
+        await prisma.follow.update({
+          where: { id: reverse.id },
+          data: { status: "ACCEPTED" },
+        });
+      }
+    } else {
+      await prisma.follow.create({
+        data: {
+          followerId: target.id,
+          followingId: req.user.id,
+          status: "ACCEPTED",
+        },
+      });
+    }
 
     await prisma.notification.create({
       data: {
         userId: target.id,
         type: "FOLLOW",
-        content: `${req.user.displayName} started following you`,
+        content: `${req.user.displayName} added you as a friend`,
         relatedUserId: req.user.id,
       },
     });
 
-    res.status(201).json({ status: "ACCEPTED" });
+    return res.status(existing ? 200 : 201).json({ status: "ACCEPTED", mutual: true });
   } catch (err) {
     console.error("Follow error:", err);
-    res.status(500).json({ error: "Failed to follow user" });
+    res.status(500).json({ error: "Failed to add friend" });
   }
 });
 
@@ -162,24 +188,55 @@ router.delete("/:username/follow", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const existing = await prisma.follow.findUnique({
+    await prisma.follow.deleteMany({
       where: {
-        followerId_followingId: {
-          followerId: req.user.id,
-          followingId: target.id,
-        },
+        OR: [
+          { followerId: req.user.id, followingId: target.id },
+          { followerId: target.id, followingId: req.user.id },
+        ],
       },
     });
 
-    if (!existing) {
-      return res.status(404).json({ error: "Not following this user" });
-    }
-
-    await prisma.follow.delete({ where: { id: existing.id } });
     res.json({ status: "NONE" });
   } catch (err) {
     console.error("Unfollow error:", err);
-    res.status(500).json({ error: "Failed to unfollow user" });
+    res.status(500).json({ error: "Failed to remove friend" });
+  }
+});
+
+router.get("/friends/list", authMiddleware, async (req, res) => {
+  try {
+    const outgoing = await prisma.follow.findMany({
+      where: { followerId: req.user.id, status: "ACCEPTED" },
+      select: { followingId: true },
+    });
+
+    const incoming = await prisma.follow.findMany({
+      where: { followingId: req.user.id, status: "ACCEPTED" },
+      select: { followerId: true },
+    });
+
+    const friendIdSet = new Set([
+      ...outgoing.map((f) => f.followingId),
+      ...incoming.map((f) => f.followerId),
+    ]);
+    friendIdSet.delete(req.user.id);
+
+    const friends = await prisma.user.findMany({
+      where: { id: { in: [...friendIdSet] } },
+    });
+
+    const results = await Promise.all(
+      friends.map(async (u) => {
+        const stats = await getUserStats(u.id);
+        return formatUser(u, stats);
+      })
+    );
+
+    res.json({ friends: results });
+  } catch (err) {
+    console.error("Friends list error:", err);
+    res.status(500).json({ error: "Failed to fetch friends" });
   }
 });
 

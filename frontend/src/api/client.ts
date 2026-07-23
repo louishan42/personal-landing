@@ -230,6 +230,14 @@ export const api = {
       method: "DELETE",
     }),
 
+  getFriends: () => request<{ friends: User[] }>("/users/friends/list"),
+
+  startConversation: (username: string) =>
+    request<{ conversation: Conversation }>("/messages/start", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+
   getUserMoments: (username: string) =>
     request<{ moments: Moment[] }>(`/users/${username}/moments`),
 

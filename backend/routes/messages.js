@@ -67,6 +67,78 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+router.post("/start", authMiddleware, async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username?.trim()) {
+      return res.status(400).json({ error: "Username is required" });
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { username: username.toLowerCase().trim() },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (target.id === req.user.id) {
+      return res.status(400).json({ error: "Cannot message yourself" });
+    }
+
+    const friendship = await prisma.follow.findFirst({
+      where: {
+        status: "ACCEPTED",
+        OR: [
+          { followerId: req.user.id, followingId: target.id },
+          { followerId: target.id, followingId: req.user.id },
+        ],
+      },
+    });
+
+    if (!friendship) {
+      return res.status(403).json({ error: "Add them as a friend first to message" });
+    }
+
+    const myMemberships = await prisma.conversationMember.findMany({
+      where: { userId: req.user.id },
+      include: {
+        conversation: {
+          include: { members: { select: { userId: true } } },
+        },
+      },
+    });
+
+    for (const membership of myMemberships) {
+      const memberIds = membership.conversation.members.map((m) => m.userId);
+      if (memberIds.length === 2 && memberIds.includes(target.id)) {
+        return res.json({
+          conversation: formatConversationPreview(
+            membership.conversation.id,
+            target,
+            membership.conversation.messages?.[0]
+          ),
+        });
+      }
+    }
+
+    const conversation = await prisma.conversation.create({
+      data: {
+        members: {
+          create: [{ userId: req.user.id }, { userId: target.id }],
+        },
+      },
+    });
+
+    res.status(201).json({
+      conversation: formatConversationPreview(conversation.id, target, null),
+    });
+  } catch (err) {
+    console.error("Start conversation error:", err);
+    res.status(500).json({ error: "Failed to start conversation" });
+  }
+});
+
 router.get("/:id", authMiddleware, async (req, res) => {
   try {
     const member = await prisma.conversationMember.findFirst({
@@ -141,6 +213,27 @@ router.post("/:id", authMiddleware, async (req, res) => {
       data: { updatedAt: new Date() },
     });
 
+    const otherMember = await prisma.conversationMember.findFirst({
+      where: {
+        conversationId: req.params.id,
+        userId: { not: req.user.id },
+      },
+      include: {
+        user: { select: { id: true, displayName: true, username: true } },
+      },
+    });
+
+    if (otherMember) {
+      await prisma.notification.create({
+        data: {
+          userId: otherMember.userId,
+          type: "MESSAGE",
+          content: `${req.user.displayName} sent you a message`,
+          relatedUserId: req.user.id,
+        },
+      });
+    }
+
     res.status(201).json({
       message: {
         id: message.id,
@@ -156,6 +249,22 @@ router.post("/:id", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Failed to send message" });
   }
 });
+
+function formatConversationPreview(conversationId, user, lastMsg) {
+  return {
+    id: conversationId,
+    user: user.displayName,
+    username: user.username,
+    avatar: user.displayName
+      .split(" ")
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase(),
+    lastMessage: lastMsg?.content || "",
+    time: lastMsg ? formatTimeAgo(lastMsg.createdAt) : "",
+  };
+}
 
 function formatTimeAgo(date) {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);

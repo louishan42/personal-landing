@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Search as SearchIcon, User as UserIcon, FileText } from "lucide-react";
 import MomentCard from "../components/MomentCard";
 import EmptyState from "../components/EmptyState";
-import { api, type Moment, type User as UserType } from "../api/client";
+import { api, ApiError, type Moment, type User as UserType } from "../api/client";
 
 export default function Search() {
   const [query, setQuery] = useState("");
@@ -11,17 +11,20 @@ export default function Search() {
   const [moments, setMoments] = useState<Moment[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (query.trim().length < 2) {
       setUsers([]);
       setMoments([]);
       setSearched(false);
+      setError("");
       return;
     }
 
     const timer = setTimeout(() => {
       setLoading(true);
+      setError("");
       api
         .search(query.trim())
         .then(({ users: u, moments: m }) => {
@@ -29,9 +32,11 @@ export default function Search() {
           setMoments(m);
           setSearched(true);
         })
-        .catch(() => {
+        .catch((err) => {
           setUsers([]);
           setMoments([]);
+          setSearched(true);
+          setError(err instanceof ApiError ? err.message : "Search failed — is the backend running?");
         })
         .finally(() => setLoading(false));
     }, 300);
@@ -57,6 +62,12 @@ export default function Search() {
           autoFocus
         />
       </div>
+
+      {error && (
+        <div className="rounded-xl bg-ape-coral/10 px-4 py-3 text-sm text-ape-coral">
+          {error}
+        </div>
+      )}
 
       {loading && (
         <div className="flex justify-center py-12">

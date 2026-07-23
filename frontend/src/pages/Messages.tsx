@@ -1,24 +1,58 @@
 import { useEffect, useState } from "react";
-import { MessageCircle } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { MessageCircle, Search } from "lucide-react";
 import EmptyState from "../components/EmptyState";
-import { api, type Conversation } from "../api/client";
+import { api, ApiError, type Conversation } from "../api/client";
 
 export default function Messages() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(
+    searchParams.get("chat")
+  );
   const [messages, setMessages] = useState<
     { id: string; content: string; isOwn: boolean; createdAt: string }[]
   >([]);
   const [newMessage, setNewMessage] = useState("");
+  const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadConversations = () =>
     api
       .getConversations()
       .then(({ conversations: c }) => setConversations(c))
-      .catch(() => setConversations([]))
-      .finally(() => setLoading(false));
+      .catch(() => setConversations([]));
+
+  useEffect(() => {
+    loadConversations().finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const chatId = searchParams.get("chat");
+    const username = searchParams.get("user");
+
+    if (chatId) {
+      setSelected(chatId);
+      return;
+    }
+
+    if (username) {
+      setError("");
+      api
+        .startConversation(username)
+        .then(({ conversation }) => {
+          setConversations((prev) => {
+            const exists = prev.some((c) => c.id === conversation.id);
+            return exists ? prev : [conversation, ...prev];
+          });
+          setSelected(conversation.id);
+          setSearchParams({ chat: conversation.id });
+        })
+        .catch((err) => {
+          setError(err instanceof ApiError ? err.message : "Could not start chat");
+        });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!selected) return;
@@ -28,14 +62,20 @@ export default function Messages() {
       .catch(() => setMessages([]));
   }, [selected]);
 
+  const openChat = (id: string) => {
+    setSelected(id);
+    setSearchParams({ chat: id });
+  };
+
   const sendMessage = async () => {
     if (!selected || !newMessage.trim()) return;
     try {
       const { message } = await api.sendMessage(selected, newMessage);
       setMessages((prev) => [...prev, message]);
       setNewMessage("");
+      loadConversations();
     } catch {
-      /* ignore */
+      setError("Failed to send message");
     }
   };
 
@@ -43,10 +83,24 @@ export default function Messages() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <div>
-        <h2 className="font-display text-2xl font-bold">Messages</h2>
-        <p className="mt-1 text-sm text-muted">Chat with people in your life</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Messages</h2>
+          <p className="mt-1 text-sm text-muted">Chat with your friends</p>
+        </div>
+        <Link
+          to="/search"
+          className="rounded-xl bg-ape-lime/10 px-4 py-2 text-sm font-semibold text-ape-lime transition hover:bg-ape-lime/20"
+        >
+          Find friends
+        </Link>
       </div>
+
+      {error && (
+        <div className="rounded-xl bg-ape-coral/10 px-4 py-3 text-sm text-ape-coral">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -56,7 +110,15 @@ export default function Messages() {
         <EmptyState
           icon={MessageCircle}
           title="No conversations yet"
-          description="When you connect with friends, your chats will show up here."
+          description="Search for people, add them as friends, then tap Message on their profile to chat."
+          action={
+            <Link
+              to="/search"
+              className="inline-flex items-center gap-2 rounded-xl bg-ape-lime/10 px-5 py-2.5 text-sm font-semibold text-ape-lime transition hover:bg-ape-lime/20"
+            >
+              <Search size={16} /> Search for friends
+            </Link>
+          }
         />
       ) : (
         <>
@@ -64,7 +126,7 @@ export default function Messages() {
             {conversations.map((msg) => (
               <button
                 key={msg.id}
-                onClick={() => setSelected(msg.id)}
+                onClick={() => openChat(msg.id)}
                 className={`flex w-full items-center gap-4 rounded-2xl p-4 text-left transition ${
                   selected === msg.id
                     ? "glass shadow-glow-lime ring-1 ring-ape-lime/20"
@@ -80,7 +142,7 @@ export default function Messages() {
                     <span className="text-xs text-muted">{msg.time}</span>
                   </div>
                   <p className="truncate text-sm text-muted">
-                    {msg.lastMessage || "No messages yet"}
+                    {msg.lastMessage || "No messages yet — say hello!"}
                   </p>
                 </div>
                 {msg.unread && (
@@ -98,7 +160,17 @@ export default function Messages() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ape-lime/20 text-xs font-bold">
                   {selectedConvo.avatar}
                 </div>
-                <p className="font-semibold">{selectedConvo.user}</p>
+                <div>
+                  <p className="font-semibold">{selectedConvo.user}</p>
+                  {selectedConvo.username && (
+                    <Link
+                      to={`/u/${selectedConvo.username}`}
+                      className="text-xs text-ape-lime hover:underline"
+                    >
+                      @{selectedConvo.username}
+                    </Link>
+                  )}
+                </div>
               </div>
 
               {messages.length === 0 ? (
@@ -133,7 +205,7 @@ export default function Messages() {
                 />
                 <button
                   onClick={sendMessage}
-                  className="rounded-xl bg-ape-lime/15 px-4 py-2.5 text-sm font-semibold text-ape-lime transition hover:bg-ape-lime/25"
+                  className="rounded-xl bg-ape-lime px-4 py-2.5 text-sm font-bold text-void transition hover:opacity-90"
                 >
                   Send
                 </button>

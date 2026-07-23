@@ -11,11 +11,19 @@ router.get("/feed", authMiddleware, async (req, res) => {
       select: { followingId: true },
     });
 
-    const followingIds = following.map((f) => f.followingId);
-    followingIds.push(req.user.id);
+    const followers = await prisma.follow.findMany({
+      where: { followingId: req.user.id, status: "ACCEPTED" },
+      select: { followerId: true },
+    });
+
+    const friendIds = new Set([
+      req.user.id,
+      ...following.map((f) => f.followingId),
+      ...followers.map((f) => f.followerId),
+    ]);
 
     const moments = await prisma.moment.findMany({
-      where: { userId: { in: followingIds } },
+      where: { userId: { in: [...friendIds] } },
       include: {
         user: {
           select: { id: true, displayName: true, username: true, avatarUrl: true },
