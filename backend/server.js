@@ -86,7 +86,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     status: "ok",
     service: "LifeVerse API",
-    version: "3",
+    version: "4",
     dbConnected: dbOk,
     googleConfigured: !!(
       process.env.GOOGLE_CLIENT_ID &&

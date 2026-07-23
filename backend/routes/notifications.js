@@ -12,6 +12,20 @@ router.get("/", authMiddleware, async (req, res) => {
       take: 50,
     });
 
+    const relatedUserIds = [
+      ...new Set(notifications.map((n) => n.relatedUserId).filter(Boolean)),
+    ];
+
+    const relatedUsers =
+      relatedUserIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: relatedUserIds } },
+            select: { id: true, username: true },
+          })
+        : [];
+
+    const usernameById = Object.fromEntries(relatedUsers.map((u) => [u.id, u.username]));
+
     res.json({
       notifications: notifications.map((n) => ({
         id: n.id,
@@ -19,6 +33,8 @@ router.get("/", authMiddleware, async (req, res) => {
         text: n.content,
         time: formatTimeAgo(n.createdAt),
         read: n.read,
+        relatedUserId: n.relatedUserId,
+        relatedUsername: n.relatedUserId ? usernameById[n.relatedUserId] : null,
       })),
       unreadCount: notifications.filter((n) => !n.read).length,
     });

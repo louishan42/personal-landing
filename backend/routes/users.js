@@ -2,6 +2,7 @@ const express = require("express");
 const prisma = require("../lib/prisma");
 const { authMiddleware } = require("../middleware/auth");
 const { getUserStats, formatUser } = require("../lib/userStats");
+const { getFriendStatus, areFriends, getFriendIds } = require("../lib/friends");
 
 const router = express.Router();
 
@@ -70,22 +71,20 @@ router.get("/:username", authMiddleware, async (req, res) => {
 
     const stats = await getUserStats(user.id);
 
-    let followStatus = null;
+    let friendStatus = "NONE";
     if (req.user.id !== user.id) {
-      const follow = await prisma.follow.findUnique({
-        where: {
-          followerId_followingId: {
-            followerId: req.user.id,
-            followingId: user.id,
-          },
-        },
-      });
-      followStatus = follow?.status || null;
+      friendStatus = await getFriendStatus(req.user.id, user.id);
     }
 
     res.json({
       user: formatUser(user, stats),
-      followStatus,
+      friendStatus,
+      followStatus:
+        friendStatus === "FRIENDS"
+          ? "ACCEPTED"
+          : friendStatus === "REQUEST_SENT"
+            ? "PENDING"
+            : null,
       isOwnProfile: req.user.id === user.id,
     });
   } catch (err) {
@@ -105,10 +104,73 @@ router.post("/:username/follow", authMiddleware, async (req, res) => {
     }
 
     if (target.id === req.user.id) {
-      return res.status(400).json({ error: "Cannot follow yourself" });
+      return res.status(400).json({ error: "Cannot add yourself" });
     }
 
-    const existing = await prisma.follow.findUnique({
+    const status = await getFriendStatus(req.user.id, target.id);
+    if (status === "FRIENDS") {
+      return res.status(409).json({ error: "Already friends" });
+    }
+    if (status === "REQUEST_SENT") {
+      return res.status(409).json({ error: "Friend request already sent" });
+    }
+    if (status === "REQUEST_RECEIVED") {
+      return res.status(400).json({ error: "They already sent you a request — accept it instead" });
+    }
+
+    await prisma.follow.create({
+      data: {
+        followerId: req.user.id,
+        followingId: target.id,
+        status: "PENDING",
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: target.id,
+        type: "FOLLOW",
+        content: `${req.user.displayName} sent you a friend request`,
+        relatedUserId: req.user.id,
+      },
+    });
+
+    res.status(201).json({ status: "PENDING", friendStatus: "REQUEST_SENT" });
+  } catch (err) {
+    console.error("Follow error:", err);
+    res.status(500).json({ error: "Failed to send friend request" });
+  }
+});
+
+router.post("/:username/friend/accept", authMiddleware, async (req, res) => {
+  try {
+    const target = await prisma.user.findUnique({
+      where: { username: req.params.username.toLowerCase() },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const incoming = await prisma.follow.findUnique({
+      where: {
+        followerId_followingId: {
+          followerId: target.id,
+          followingId: req.user.id,
+        },
+      },
+    });
+
+    if (!incoming || incoming.status !== "PENDING") {
+      return res.status(404).json({ error: "No pending friend request from this user" });
+    }
+
+    await prisma.follow.update({
+      where: { id: incoming.id },
+      data: { status: "ACCEPTED" },
+    });
+
+    const outgoing = await prisma.follow.findUnique({
       where: {
         followerId_followingId: {
           followerId: req.user.id,
@@ -117,12 +179,9 @@ router.post("/:username/follow", authMiddleware, async (req, res) => {
       },
     });
 
-    if (existing) {
-      if (existing.status === "ACCEPTED") {
-        return res.status(409).json({ error: "Already friends" });
-      }
+    if (outgoing) {
       await prisma.follow.update({
-        where: { id: existing.id },
+        where: { id: outgoing.id },
         data: { status: "ACCEPTED" },
       });
     } else {
@@ -135,46 +194,48 @@ router.post("/:username/follow", authMiddleware, async (req, res) => {
       });
     }
 
-    // Mutual friendship so both users see each other's posts in feed
-    const reverse = await prisma.follow.findUnique({
-      where: {
-        followerId_followingId: {
-          followerId: target.id,
-          followingId: req.user.id,
-        },
-      },
-    });
-
-    if (reverse) {
-      if (reverse.status !== "ACCEPTED") {
-        await prisma.follow.update({
-          where: { id: reverse.id },
-          data: { status: "ACCEPTED" },
-        });
-      }
-    } else {
-      await prisma.follow.create({
-        data: {
-          followerId: target.id,
-          followingId: req.user.id,
-          status: "ACCEPTED",
-        },
-      });
-    }
-
     await prisma.notification.create({
       data: {
         userId: target.id,
         type: "FOLLOW",
-        content: `${req.user.displayName} added you as a friend`,
+        content: `${req.user.displayName} accepted your friend request`,
         relatedUserId: req.user.id,
       },
     });
 
-    return res.status(existing ? 200 : 201).json({ status: "ACCEPTED", mutual: true });
+    res.json({ status: "ACCEPTED", friendStatus: "FRIENDS" });
   } catch (err) {
-    console.error("Follow error:", err);
-    res.status(500).json({ error: "Failed to add friend" });
+    console.error("Accept friend error:", err);
+    res.status(500).json({ error: "Failed to accept friend request" });
+  }
+});
+
+router.post("/:username/friend/reject", authMiddleware, async (req, res) => {
+  try {
+    const target = await prisma.user.findUnique({
+      where: { username: req.params.username.toLowerCase() },
+    });
+
+    if (!target) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const deleted = await prisma.follow.deleteMany({
+      where: {
+        followerId: target.id,
+        followingId: req.user.id,
+        status: "PENDING",
+      },
+    });
+
+    if (deleted.count === 0) {
+      return res.status(404).json({ error: "No pending friend request from this user" });
+    }
+
+    res.json({ status: "NONE", friendStatus: "NONE" });
+  } catch (err) {
+    console.error("Reject friend error:", err);
+    res.status(500).json({ error: "Failed to decline friend request" });
   }
 });
 
@@ -197,7 +258,7 @@ router.delete("/:username/follow", authMiddleware, async (req, res) => {
       },
     });
 
-    res.json({ status: "NONE" });
+    res.json({ status: "NONE", friendStatus: "NONE" });
   } catch (err) {
     console.error("Unfollow error:", err);
     res.status(500).json({ error: "Failed to remove friend" });
@@ -206,24 +267,10 @@ router.delete("/:username/follow", authMiddleware, async (req, res) => {
 
 router.get("/friends/list", authMiddleware, async (req, res) => {
   try {
-    const outgoing = await prisma.follow.findMany({
-      where: { followerId: req.user.id, status: "ACCEPTED" },
-      select: { followingId: true },
-    });
-
-    const incoming = await prisma.follow.findMany({
-      where: { followingId: req.user.id, status: "ACCEPTED" },
-      select: { followerId: true },
-    });
-
-    const friendIdSet = new Set([
-      ...outgoing.map((f) => f.followingId),
-      ...incoming.map((f) => f.followerId),
-    ]);
-    friendIdSet.delete(req.user.id);
+    const friendIds = await getFriendIds(req.user.id);
 
     const friends = await prisma.user.findMany({
-      where: { id: { in: [...friendIdSet] } },
+      where: { id: { in: friendIds } },
     });
 
     const results = await Promise.all(
@@ -248,6 +295,13 @@ router.get("/:username/moments", authMiddleware, async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    const isOwn = req.user.id === user.id;
+    const friends = isOwn || (await areFriends(req.user.id, user.id));
+
+    if (!friends) {
+      return res.json({ moments: [], locked: true });
     }
 
     const moments = await prisma.moment.findMany({

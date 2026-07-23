@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { MapPin, UserPlus, UserMinus, Camera, MessageCircle } from "lucide-react";
+import { MapPin, UserPlus, UserMinus, Camera, MessageCircle, UserCheck, Clock } from "lucide-react";
 import MomentCard from "../components/MomentCard";
 import EmptyState from "../components/EmptyState";
 import { useAuth } from "../context/AuthContext";
-import { api, ApiError, type Moment, type User } from "../api/client";
+import { api, ApiError, type FriendStatus, type Moment, type User } from "../api/client";
 
 export default function UserProfile() {
   const { username } = useParams<{ username: string }>();
@@ -12,12 +12,26 @@ export default function UserProfile() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<User | null>(null);
   const [moments, setMoments] = useState<Moment[]>([]);
-  const [followStatus, setFollowStatus] = useState<string | null>(null);
+  const [friendStatus, setFriendStatus] = useState<FriendStatus>("NONE");
+  const [momentsLocked, setMomentsLocked] = useState(false);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [followLoading, setFollowLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [messageLoading, setMessageLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const loadProfile = async () => {
+    if (!username) return;
+    const [profileRes, momentsRes] = await Promise.all([
+      api.getUser(username),
+      api.getUserMoments(username),
+    ]);
+    setProfile(profileRes.user);
+    setFriendStatus(profileRes.friendStatus);
+    setIsOwnProfile(profileRes.isOwnProfile);
+    setMoments(momentsRes.moments);
+    setMomentsLocked(!!momentsRes.locked);
+  };
 
   useEffect(() => {
     if (!username) return;
@@ -26,60 +40,88 @@ export default function UserProfile() {
       return;
     }
 
-    Promise.all([api.getUser(username), api.getUserMoments(username)])
-      .then(([profileRes, momentsRes]) => {
-        setProfile(profileRes.user);
-        setFollowStatus(profileRes.followStatus);
-        setIsOwnProfile(profileRes.isOwnProfile);
-        setMoments(momentsRes.moments);
-      })
-      .catch(() => {
-        setProfile(null);
-      })
+    loadProfile()
+      .catch(() => setProfile(null))
       .finally(() => setLoading(false));
   }, [username, currentUser?.username, navigate]);
 
-  const handleFollow = async () => {
-    if (!username || followLoading) return;
-    setFollowLoading(true);
+  const handleAddFriend = async () => {
+    if (!username || actionLoading) return;
+    setActionLoading(true);
     setError("");
     try {
-      if (followStatus === "ACCEPTED") {
-        await api.unfollowUser(username);
-        setFollowStatus(null);
-        if (profile) {
-          setProfile({
-            ...profile,
-            stats: {
-              ...profile.stats,
-              followers: Math.max(0, profile.stats.followers - 1),
-            },
-          });
-        }
-      } else {
-        await api.followUser(username);
-        setFollowStatus("ACCEPTED");
-        if (profile) {
-          setProfile({
-            ...profile,
-            stats: {
-              ...profile.stats,
-              followers: profile.stats.followers + 1,
-            },
-          });
-        }
-      }
+      const { friendStatus: status } = await api.followUser(username);
+      setFriendStatus(status);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to update friend status");
+      setError(err instanceof ApiError ? err.message : "Failed to send request");
     } finally {
-      setFollowLoading(false);
+      setActionLoading(false);
+    }
+  };
+
+  const handleAccept = async () => {
+    if (!username || actionLoading) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      const { friendStatus: status } = await api.acceptFriend(username);
+      setFriendStatus(status);
+      await loadProfile();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to accept request");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!username || actionLoading) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      const { friendStatus: status } = await api.rejectFriend(username);
+      setFriendStatus(status);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to decline request");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnfriend = async () => {
+    if (!username || actionLoading) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      await api.unfollowUser(username);
+      setFriendStatus("NONE");
+      setMoments([]);
+      setMomentsLocked(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to remove friend");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelRequest = async () => {
+    if (!username || actionLoading) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      await api.unfollowUser(username);
+      setFriendStatus("NONE");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to cancel request");
+    } finally {
+      setActionLoading(false);
     }
   };
 
   const handleMessage = async () => {
     if (!username || messageLoading) return;
-    if (followStatus !== "ACCEPTED") {
-      setError("Add them as a friend first to message");
+    if (friendStatus !== "FRIENDS") {
+      setError("You must be friends to message each other");
       return;
     }
     setMessageLoading(true);
@@ -116,9 +158,7 @@ export default function UserProfile() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       {error && (
-        <div className="rounded-xl bg-ape-coral/10 px-4 py-3 text-sm text-ape-coral">
-          {error}
-        </div>
+        <div className="rounded-xl bg-ape-coral/10 px-4 py-3 text-sm text-ape-coral">{error}</div>
       )}
 
       <div className="relative overflow-hidden rounded-3xl glass shadow-card">
@@ -129,35 +169,61 @@ export default function UserProfile() {
               {profile.avatar}
             </div>
             {!isOwnProfile && (
-              <div className="mb-1 flex gap-2">
-                <button
-                  onClick={handleFollow}
-                  disabled={followLoading}
-                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
-                    followStatus === "ACCEPTED"
-                      ? "border border-border bg-elevated text-muted hover:border-ape-coral/50 hover:text-ape-coral"
-                      : "bg-gradient-to-r from-ape-lime to-ape-emerald text-void hover:opacity-90"
-                  }`}
-                >
-                  {followStatus === "ACCEPTED" ? (
-                    <>
-                      <UserMinus size={16} /> Friends
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus size={16} /> Add Friend
-                    </>
-                  )}
-                </button>
-                {followStatus === "ACCEPTED" && (
+              <div className="mb-1 flex flex-wrap justify-end gap-2">
+                {friendStatus === "NONE" && (
                   <button
-                    onClick={handleMessage}
-                    disabled={messageLoading}
-                    className="flex items-center gap-2 rounded-xl border border-ape-sky/30 bg-ape-sky/10 px-4 py-2.5 text-sm font-semibold text-ape-sky transition hover:bg-ape-sky/20 disabled:opacity-50"
+                    onClick={handleAddFriend}
+                    disabled={actionLoading}
+                    className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-ape-lime to-ape-emerald px-4 py-2.5 text-sm font-semibold text-void transition hover:opacity-90 disabled:opacity-50"
                   >
-                    <MessageCircle size={16} />
-                    {messageLoading ? "..." : "Message"}
+                    <UserPlus size={16} /> Add Friend
                   </button>
+                )}
+                {friendStatus === "REQUEST_SENT" && (
+                  <button
+                    onClick={handleCancelRequest}
+                    disabled={actionLoading}
+                    className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2.5 text-sm font-semibold text-muted transition hover:text-ape-coral disabled:opacity-50"
+                  >
+                    <Clock size={16} /> Request Sent
+                  </button>
+                )}
+                {friendStatus === "REQUEST_RECEIVED" && (
+                  <>
+                    <button
+                      onClick={handleAccept}
+                      disabled={actionLoading}
+                      className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-ape-lime to-ape-emerald px-4 py-2.5 text-sm font-semibold text-void transition hover:opacity-90 disabled:opacity-50"
+                    >
+                      <UserCheck size={16} /> Accept Friend
+                    </button>
+                    <button
+                      onClick={handleReject}
+                      disabled={actionLoading}
+                      className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2.5 text-sm font-semibold text-muted transition hover:text-ape-coral disabled:opacity-50"
+                    >
+                      Decline
+                    </button>
+                  </>
+                )}
+                {friendStatus === "FRIENDS" && (
+                  <>
+                    <button
+                      onClick={handleUnfriend}
+                      disabled={actionLoading}
+                      className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-4 py-2.5 text-sm font-semibold text-muted transition hover:border-ape-coral/50 hover:text-ape-coral disabled:opacity-50"
+                    >
+                      <UserMinus size={16} /> Friends
+                    </button>
+                    <button
+                      onClick={handleMessage}
+                      disabled={messageLoading}
+                      className="flex items-center gap-2 rounded-xl border border-ape-sky/30 bg-ape-sky/10 px-4 py-2.5 text-sm font-semibold text-ape-sky transition hover:bg-ape-sky/20 disabled:opacity-50"
+                    >
+                      <MessageCircle size={16} />
+                      {messageLoading ? "..." : "Message"}
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -170,28 +236,39 @@ export default function UserProfile() {
             </p>
           )}
           {profile.bio && <p className="mt-3 text-sm leading-relaxed">{profile.bio}</p>}
-
-          <div className="mt-4 flex gap-6 text-sm">
-            <span>
-              <strong className="text-white">{profile.stats.followers}</strong>{" "}
-              <span className="text-muted">Friends</span>
-            </span>
-            <span>
-              <strong className="text-white">{profile.stats.moments}</strong>{" "}
-              <span className="text-muted">Moments</span>
-            </span>
-          </div>
         </div>
       </div>
 
-      {followStatus !== "ACCEPTED" && !isOwnProfile && (
+      {friendStatus !== "FRIENDS" && !isOwnProfile && (
         <p className="rounded-xl bg-elevated/60 px-4 py-3 text-sm text-muted">
-          Add <strong className="text-white">@{profile.username}</strong> as a friend to see their
-          posts in your feed and message them.
+          {friendStatus === "REQUEST_SENT" && (
+            <>
+              Waiting for <strong className="text-white">@{profile.username}</strong> to accept your
+              friend request. Their posts stay hidden until then.
+            </>
+          )}
+          {friendStatus === "REQUEST_RECEIVED" && (
+            <>
+              <strong className="text-white">@{profile.username}</strong> wants to be friends. Tap{" "}
+              <strong className="text-ape-lime">Accept Friend</strong> to see each other's posts.
+            </>
+          )}
+          {friendStatus === "NONE" && (
+            <>
+              Send a friend request to <strong className="text-white">@{profile.username}</strong>.
+              Once they accept, you'll see each other's posts and can message.
+            </>
+          )}
         </p>
       )}
 
-      {moments.length === 0 ? (
+      {momentsLocked ? (
+        <EmptyState
+          icon={Camera}
+          title="Posts are private"
+          description="Become friends to see what they post."
+        />
+      ) : moments.length === 0 ? (
         <EmptyState
           icon={Camera}
           title="No moments yet"
@@ -199,9 +276,7 @@ export default function UserProfile() {
         />
       ) : (
         <div className="space-y-4">
-          <h3 className="text-sm font-semibold uppercase tracking-widest text-muted">
-            Their posts
-          </h3>
+          <h3 className="text-sm font-semibold uppercase tracking-widest text-muted">Their posts</h3>
           {moments.map((m) => (
             <MomentCard key={m.id} moment={m} linkToDetail />
           ))}

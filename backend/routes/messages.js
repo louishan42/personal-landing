@@ -67,6 +67,8 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+const { areFriends } = require("../lib/friends");
+
 router.post("/start", authMiddleware, async (req, res) => {
   try {
     const { username } = req.body;
@@ -86,18 +88,8 @@ router.post("/start", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Cannot message yourself" });
     }
 
-    const friendship = await prisma.follow.findFirst({
-      where: {
-        status: "ACCEPTED",
-        OR: [
-          { followerId: req.user.id, followingId: target.id },
-          { followerId: target.id, followingId: req.user.id },
-        ],
-      },
-    });
-
-    if (!friendship) {
-      return res.status(403).json({ error: "Add them as a friend first to message" });
+    if (!(await areFriends(req.user.id, target.id))) {
+      return res.status(403).json({ error: "You must be friends to message each other" });
     }
 
     const myMemberships = await prisma.conversationMember.findMany({

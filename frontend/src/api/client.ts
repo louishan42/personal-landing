@@ -135,7 +135,11 @@ export interface Notification {
   text: string;
   time: string;
   read: boolean;
+  relatedUserId?: string | null;
+  relatedUsername?: string | null;
 }
+
+export type FriendStatus = "NONE" | "REQUEST_SENT" | "REQUEST_RECEIVED" | "FRIENDS";
 
 export interface AdminUser {
   id: string;
@@ -216,14 +220,30 @@ export const api = {
     request<{ users: User[]; moments: Moment[] }>(`/search?q=${encodeURIComponent(q)}`),
 
   getUser: (username: string) =>
-    request<{ user: User; followStatus: string | null; isOwnProfile: boolean }>(
-      `/users/${encodeURIComponent(username)}`
-    ),
+    request<{
+      user: User;
+      friendStatus: FriendStatus;
+      followStatus: string | null;
+      isOwnProfile: boolean;
+    }>(`/users/${encodeURIComponent(username)}`),
 
   followUser: (username: string) =>
-    request<{ status: string }>(`/users/${encodeURIComponent(username)}/follow`, {
-      method: "POST",
-    }),
+    request<{ status: string; friendStatus: FriendStatus }>(
+      `/users/${encodeURIComponent(username)}/follow`,
+      { method: "POST" }
+    ),
+
+  acceptFriend: (username: string) =>
+    request<{ status: string; friendStatus: FriendStatus }>(
+      `/users/${encodeURIComponent(username)}/friend/accept`,
+      { method: "POST" }
+    ),
+
+  rejectFriend: (username: string) =>
+    request<{ status: string; friendStatus: FriendStatus }>(
+      `/users/${encodeURIComponent(username)}/friend/reject`,
+      { method: "POST" }
+    ),
 
   unfollowUser: (username: string) =>
     request<{ status: string }>(`/users/${encodeURIComponent(username)}/follow`, {
@@ -239,7 +259,9 @@ export const api = {
     }),
 
   getUserMoments: (username: string) =>
-    request<{ moments: Moment[] }>(`/users/${username}/moments`),
+    request<{ moments: Moment[]; locked?: boolean }>(
+      `/users/${encodeURIComponent(username)}/moments`
+    ),
 
   getTimeline: () => request<{ timeline: TimelineGroup[] }>("/timeline"),
 

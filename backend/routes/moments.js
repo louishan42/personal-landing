@@ -4,26 +4,15 @@ const { authMiddleware } = require("../middleware/auth");
 
 const router = express.Router();
 
+const { getFriendIds, areFriends } = require("../lib/friends");
+
 router.get("/feed", authMiddleware, async (req, res) => {
   try {
-    const following = await prisma.follow.findMany({
-      where: { followerId: req.user.id, status: "ACCEPTED" },
-      select: { followingId: true },
-    });
-
-    const followers = await prisma.follow.findMany({
-      where: { followingId: req.user.id, status: "ACCEPTED" },
-      select: { followerId: true },
-    });
-
-    const friendIds = new Set([
-      req.user.id,
-      ...following.map((f) => f.followingId),
-      ...followers.map((f) => f.followerId),
-    ]);
+    const friendIds = await getFriendIds(req.user.id);
+    friendIds.push(req.user.id);
 
     const moments = await prisma.moment.findMany({
-      where: { userId: { in: [...friendIds] } },
+      where: { userId: { in: friendIds } },
       include: {
         user: {
           select: { id: true, displayName: true, username: true, avatarUrl: true },
