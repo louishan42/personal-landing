@@ -8,11 +8,14 @@ import SetupProfile from "./pages/SetupProfile";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import Home from "./pages/Home";
+import Search from "./pages/Search";
 import Explore from "./pages/Explore";
 import Create from "./pages/Create";
 import Messages from "./pages/Messages";
 import Notifications from "./pages/Notifications";
 import Profile from "./pages/Profile";
+import UserProfile from "./pages/UserProfile";
+import MomentDetail from "./pages/MomentDetail";
 import Timeline from "./pages/Timeline";
 import LifeMap from "./pages/LifeMap";
 
@@ -46,11 +49,14 @@ export default function App() {
               <Layout>
                 <Routes>
                   <Route path="/" element={<Home />} />
+                  <Route path="/search" element={<Search />} />
                   <Route path="/explore" element={<Explore />} />
                   <Route path="/create" element={<Create />} />
                   <Route path="/messages" element={<Messages />} />
                   <Route path="/notifications" element={<Notifications />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/u/:username" element={<UserProfile />} />
+                  <Route path="/moment/:id" element={<MomentDetail />} />
                   <Route path="/timeline" element={<Timeline />} />
                   <Route path="/map" element={<LifeMap />} />
                 </Routes>

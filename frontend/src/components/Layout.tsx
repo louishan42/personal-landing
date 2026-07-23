@@ -6,6 +6,7 @@ import {
   Map,
   MessageCircle,
   Plus,
+  Search,
   User,
   Calendar,
   LogOut,
@@ -16,6 +17,7 @@ import { api } from "../api/client";
 
 const mainNav = [
   { to: "/", icon: Home, label: "Home" },
+  { to: "/search", icon: Search, label: "Search" },
   { to: "/explore", icon: Compass, label: "Explore" },
   { to: "/create", icon: Plus, label: "Create" },
   { to: "/messages", icon: MessageCircle, label: "Messages" },

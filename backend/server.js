@@ -12,7 +12,7 @@ const timelineRoutes = require("./routes/timeline");
 const experienceRoutes = require("./routes/experiences");
 const messageRoutes = require("./routes/messages");
 const notificationRoutes = require("./routes/notifications");
-const adminRoutes = require("./routes/admin");
+const searchRoutes = require("./routes/search");
 
 async function ensureAdminUser() {
   const email = process.env.ADMIN_EMAIL;
@@ -71,7 +71,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -93,6 +93,7 @@ app.use("/api/experiences", experienceRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/search", searchRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err);

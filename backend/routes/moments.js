@@ -36,30 +36,44 @@ router.get("/feed", authMiddleware, async (req, res) => {
 
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    const { caption, location, type } = req.body;
+    const { caption, location, type, photos } = req.body;
+
+    const hasPhotos = Array.isArray(photos) && photos.length > 0;
+    const momentType = hasPhotos
+      ? "PHOTO"
+      : (type || "TEXT").toUpperCase();
 
     const moment = await prisma.moment.create({
       data: {
         userId: req.user.id,
         caption: caption || "",
         location: location || "",
-        type: (type || "TEXT").toUpperCase(),
+        type: momentType,
+        ...(hasPhotos && {
+          media: {
+            create: photos.slice(0, 4).map((url, order) => ({
+              url,
+              type: "image",
+              order,
+            })),
+          },
+        }),
       },
       include: {
         user: {
           select: { id: true, displayName: true, username: true, avatarUrl: true },
         },
-        media: true,
+        media: { orderBy: { order: "asc" } },
         _count: { select: { likes: true, comments: true } },
       },
     });
 
-    if (caption) {
+    if (caption || hasPhotos) {
       await prisma.timelineEntry.create({
         data: {
           userId: req.user.id,
-          emoji: "📸",
-          title: caption.slice(0, 100),
+          emoji: hasPhotos ? "📸" : "✍️",
+          title: (caption || "Photo moment").slice(0, 100),
           entryDate: new Date(),
         },
       });
@@ -69,6 +83,132 @@ router.post("/", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("Create moment error:", err);
     res.status(500).json({ error: "Failed to create moment" });
+  }
+});
+
+router.get("/:id", authMiddleware, async (req, res) => {
+  try {
+    const moment = await prisma.moment.findUnique({
+      where: { id: req.params.id },
+      include: {
+        user: {
+          select: { id: true, displayName: true, username: true, avatarUrl: true },
+        },
+        media: { orderBy: { order: "asc" } },
+        comments: {
+          include: {
+            user: {
+              select: { id: true, displayName: true, username: true },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        _count: { select: { likes: true, comments: true } },
+      },
+    });
+
+    if (!moment) {
+      return res.status(404).json({ error: "Moment not found" });
+    }
+
+    const liked = await prisma.like.findUnique({
+      where: {
+        userId_momentId: { userId: req.user.id, momentId: moment.id },
+      },
+    });
+
+    res.json({
+      moment: {
+        ...formatMoment(moment),
+        liked: !!liked,
+        commentList: moment.comments.map((c) => ({
+          id: c.id,
+          content: c.content,
+          time: formatTimeAgo(c.createdAt),
+          user: {
+            id: c.user.id,
+            name: c.user.displayName,
+            username: c.user.username,
+            avatar: c.user.displayName
+              .split(" ")
+              .map((w) => w[0])
+              .join("")
+              .slice(0, 2)
+              .toUpperCase(),
+          },
+        })),
+      },
+    });
+  } catch (err) {
+    console.error("Get moment error:", err);
+    res.status(500).json({ error: "Failed to fetch moment" });
+  }
+});
+
+router.post("/:id/comments", authMiddleware, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content?.trim()) {
+      return res.status(400).json({ error: "Comment cannot be empty" });
+    }
+
+    const moment = await prisma.moment.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!moment) {
+      return res.status(404).json({ error: "Moment not found" });
+    }
+
+    const comment = await prisma.comment.create({
+      data: {
+        userId: req.user.id,
+        momentId: moment.id,
+        content: content.trim(),
+      },
+      include: {
+        user: {
+          select: { id: true, displayName: true, username: true },
+        },
+      },
+    });
+
+    if (moment.userId !== req.user.id) {
+      await prisma.notification.create({
+        data: {
+          userId: moment.userId,
+          type: "COMMENT",
+          content: `${req.user.displayName} commented on your moment`,
+          relatedUserId: req.user.id,
+          relatedMomentId: moment.id,
+        },
+      });
+    }
+
+    const count = await prisma.comment.count({ where: { momentId: moment.id } });
+
+    res.status(201).json({
+      comment: {
+        id: comment.id,
+        content: comment.content,
+        time: "just now",
+        user: {
+          id: comment.user.id,
+          name: comment.user.displayName,
+          username: comment.user.username,
+          avatar: comment.user.displayName
+            .split(" ")
+            .map((w) => w[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase(),
+        },
+      },
+      comments: count,
+    });
+  } catch (err) {
+    console.error("Comment error:", err);
+    res.status(500).json({ error: "Failed to add comment" });
   }
 });
 

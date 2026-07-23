@@ -74,15 +74,37 @@ export interface User {
   stats: UserStats;
 }
 
+export interface MomentMedia {
+  id: string;
+  url: string;
+  type: string;
+  order: number;
+}
+
+export interface MomentComment {
+  id: string;
+  content: string;
+  time: string;
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    avatar: string;
+  };
+}
+
 export interface Moment {
   id: string;
   caption: string;
   location: string;
   type: string;
+  media?: MomentMedia[];
   mediaCount: number;
   likes: number;
   comments: number;
   time: string;
+  liked?: boolean;
+  commentList?: MomentComment[];
   user: {
     id: string;
     name: string;
@@ -163,10 +185,23 @@ export const api = {
 
   getFeed: () => request<{ moments: Moment[] }>("/moments/feed"),
 
-  createMoment: (data: { caption: string; location?: string; type?: string }) =>
+  createMoment: (data: {
+    caption?: string;
+    location?: string;
+    type?: string;
+    photos?: string[];
+  }) =>
     request<{ moment: Moment }>("/moments", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  getMoment: (id: string) => request<{ moment: Moment }>(`/moments/${id}`),
+
+  commentMoment: (id: string, content: string) =>
+    request<{ comment: MomentComment; comments: number }>(`/moments/${id}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
     }),
 
   likeMoment: (id: string) =>
@@ -176,6 +211,24 @@ export const api = {
 
   explore: () =>
     request<{ locations: { name: string; count: number }[] }>("/moments/explore"),
+
+  search: (q: string) =>
+    request<{ users: User[]; moments: Moment[] }>(`/search?q=${encodeURIComponent(q)}`),
+
+  getUser: (username: string) =>
+    request<{ user: User; followStatus: string | null; isOwnProfile: boolean }>(
+      `/users/${encodeURIComponent(username)}`
+    ),
+
+  followUser: (username: string) =>
+    request<{ status: string }>(`/users/${encodeURIComponent(username)}/follow`, {
+      method: "POST",
+    }),
+
+  unfollowUser: (username: string) =>
+    request<{ status: string }>(`/users/${encodeURIComponent(username)}/follow`, {
+      method: "DELETE",
+    }),
 
   getUserMoments: (username: string) =>
     request<{ moments: Moment[] }>(`/users/${username}/moments`),

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { MapPin, Globe, Camera, Target, Sparkles } from "lucide-react";
 import EmptyState from "../components/EmptyState";
+import MomentCard from "../components/MomentCard";
 import { useAuth } from "../context/AuthContext";
 import { api, type Moment } from "../api/client";
 
@@ -115,16 +116,7 @@ export default function Profile() {
       ) : (
         <div className="space-y-4">
           {moments.map((m) => (
-            <div
-              key={m.id}
-              className="rounded-2xl border border-border/40 bg-surface/60 p-4"
-            >
-              <p className="text-sm">{m.caption || "Untitled moment"}</p>
-              <p className="mt-1 text-xs text-muted">
-                {m.location && `${m.location} · `}
-                {m.time}
-              </p>
-            </div>
+            <MomentCard key={m.id} moment={m} linkToDetail />
           ))}
         </div>
       )}

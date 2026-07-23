@@ -1,28 +1,62 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Camera, MapPin } from "lucide-react";
+import { Camera, MapPin, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
 
 export default function Create() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [caption, setCaption] = useState("");
   const [location, setLocation] = useState(user?.location || "");
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [expTitle, setExpTitle] = useState("");
   const [expDesc, setExpDesc] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file");
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      setError("Image must be under 4MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPhotoPreview(reader.result as string);
+      setError("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearPhoto = () => {
+    setPhotoPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const postMoment = async () => {
-    if (!caption.trim()) {
-      setError("Write something about your moment");
+    if (!caption.trim() && !photoPreview) {
+      setError("Add a photo or write something about your moment");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      await api.createMoment({ caption, location, type: "text" });
+      await api.createMoment({
+        caption: caption.trim(),
+        location,
+        type: photoPreview ? "photo" : "text",
+        photos: photoPreview ? [photoPreview] : undefined,
+      });
       await refreshUser();
       navigate("/");
     } catch {
@@ -71,12 +105,40 @@ export default function Create() {
         <h3 className="mb-4 text-sm font-semibold uppercase tracking-widest text-ape-lime">
           Quick Moment
         </h3>
-        <div className="mb-4 flex aspect-video items-center justify-center rounded-xl border-2 border-dashed border-border bg-elevated/40">
-          <div className="text-center">
-            <Camera size={32} className="mx-auto text-muted" />
-            <p className="mt-2 text-sm text-muted">Photo upload coming soon</p>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handlePhotoSelect}
+          className="hidden"
+        />
+
+        {photoPreview ? (
+          <div className="relative mb-4 overflow-hidden rounded-xl">
+            <img
+              src={photoPreview}
+              alt="Preview"
+              className="aspect-video w-full object-cover"
+            />
+            <button
+              onClick={clearPhoto}
+              className="absolute right-2 top-2 rounded-full bg-void/80 p-1.5 text-white transition hover:bg-void"
+            >
+              <X size={16} />
+            </button>
           </div>
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="mb-4 flex aspect-video w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-elevated/40 transition hover:border-ape-lime/40 hover:bg-ape-lime/5"
+          >
+            <Camera size={32} className="text-muted" />
+            <p className="mt-2 text-sm text-muted">Tap to add a photo</p>
+          </button>
+        )}
+
         <textarea
           value={caption}
           onChange={(e) => setCaption(e.target.value)}
@@ -99,7 +161,7 @@ export default function Create() {
           disabled={loading}
           className="mt-5 w-full rounded-xl bg-gradient-to-r from-ape-lime to-ape-emerald py-3 text-sm font-bold text-void transition hover:opacity-90 disabled:opacity-50"
         >
-          {loading ? "Posting..." : "Post Moment"}
+          {loading ? "Posting..." : "Post to Feed"}
         </button>
       </section>
 

@@ -68,7 +68,7 @@ export default function Home() {
         <div className="space-y-5">
           {moments.map((moment, i) => (
             <div key={moment.id} style={{ animationDelay: `${i * 0.1}s` }}>
-              <MomentCard moment={moment} onLike={handleLike} />
+              <MomentCard moment={moment} onLike={handleLike} linkToDetail />
             </div>
           ))}
         </div>
