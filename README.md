@@ -1,49 +1,58 @@
-# Personal Landing
+# LifeVerse
 
-A minimalist personal landing page with a frontend static site and a backend API.
+**Your universe. Your story.**
 
-## Project Structure
+> **Local setup:** [SETUP.md](./SETUP.md) — fix Google OAuth Client ID to enable sign-in  
+> **Deploy:** [DEPLOY.md](./DEPLOY.md) — Vercel + Render + Neon PostgreSQL
 
-```
-personal-landing/
-├── frontend/   # Static HTML/CSS site
-└── backend/    # Express API server
-```
+LifeVerse is a personal life journal and social platform. Document real moments, build your timeline, and connect with people in your life. Everything starts at zero and grows as you use it.
 
-## Getting Started
+## Tech Stack
 
-Open two terminals and run frontend and backend separately.
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS → **Vercel** |
+| Backend | Node.js, Express → **Render** |
+| Database | PostgreSQL → **Neon** (or Render PostgreSQL) |
+| Auth | Google Sign-In (Gmail) + Admin password login |
 
-### Frontend (Terminal 1)
+## Authentication
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+- **Users** — Google Sign-In only (@gmail.com)
+- **Admin** — Password at `/admin/login`
+- **Usernames** — Unique, chosen after first Google sign-in
 
-Frontend runs at [http://localhost:3000](http://localhost:3000)
-
-### Backend (Terminal 2)
+## Quick start (local)
 
 ```bash
-cd backend
-npm install
-npm run dev
+docker compose up -d
+cd backend && npm install && npx prisma db push && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
-Backend runs at [http://localhost:3001](http://localhost:3001)
+Open http://localhost:3000
 
-Health check: [http://localhost:3001/api/health](http://localhost:3001/api/health)
+## Project structure
+
+```
+lifeverse/
+├── frontend/          → Vercel
+├── backend/           → Render
+├── render.yaml        → Render blueprint
+├── docker-compose.yml → Local PostgreSQL
+├── SETUP.md           → Local + Google OAuth fix
+└── DEPLOY.md          → Production deployment guide
+```
 
 ## Pages
 
-- `/` — Home
-- `/location/` — Location
-- `/projects/` — Projects
-- `/web/` — Web
-- `/resources/` — Resources
-- `/goals/` — Goals
-- `/japan/` — Japan
-- `/interests/` — Interests
-- `/education/` — Education
+| Route | Description |
+|-------|-------------|
+| `/login` | Google Sign-In (Gmail only) |
+| `/setup-profile` | Choose unique username |
+| `/admin/login` | Admin password login |
+| `/admin` | Admin dashboard |
+| `/` | Home feed |
+| `/profile` | Your profile |
+| `/timeline` | Life timeline |
+| `/map` | Life map |

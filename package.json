@@ -1,0 +1,12 @@
+{
+  "name": "lifeverse",
+  "private": true,
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:push": "cd backend && npx prisma db push",
+    "db:setup": "docker compose up -d && sleep 3 && cd backend && npx prisma db push",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "setup": "npm run db:setup && echo 'Setup complete. Run npm run dev:backend and npm run dev:frontend in separate terminals.'"
+  }
+}

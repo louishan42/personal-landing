@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String   @id @default(cuid())
+  email                String   @unique
+  username             String   @unique
+  passwordHash         String?  @map("password_hash")
+  googleId             String?  @unique @map("google_id")
+  displayName          String   @map("display_name")
+  bio                  String   @default("")
+  location             String   @default("")
+  avatarUrl            String?  @map("avatar_url")
+  isAdmin              Boolean  @default(false) @map("is_admin")
+  profileSetupComplete Boolean  @default(false) @map("profile_setup_complete")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  moments              Moment[]
+  experiences          Experience[]
+  timelineEntries      TimelineEntry[]
+  likes                Like[]
+  comments             Comment[]
+  sentMessages         Message[]              @relation("SentMessages")
+  notifications        Notification[]
+  followers            Follow[]               @relation("Following")
+  following            Follow[]               @relation("Follower")
+  conversationMembers    ConversationMember[]
+
+  @@map("users")
+}
+
+model Follow {
+  id          String       @id @default(cuid())
+  followerId  String       @map("follower_id")
+  followingId String       @map("following_id")
+  status      FollowStatus @default(PENDING)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@map("follows")
+}
+
+enum FollowStatus {
+  PENDING
+  ACCEPTED
+}
+
+model Moment {
+  id        String     @id @default(cuid())
+  userId    String     @map("user_id")
+  caption   String     @default("")
+  location  String     @default("")
+  type      MomentType @default(TEXT)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  media    MomentMedia[]
+  likes    Like[]
+  comments Comment[]
+
+  @@map("moments")
+}
+
+enum MomentType {
+  PHOTO
+  VIDEO
+  TEXT
+}
+
+model MomentMedia {
+  id       String @id @default(cuid())
+  momentId String @map("moment_id")
+  url      String
+  type     String @default("image")
+  order    Int    @default(0)
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@map("moment_media")
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  momentId  String   @map("moment_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, momentId])
+  @@map("likes")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  momentId  String   @map("moment_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model Experience {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  title       String
+  description String   @default("")
+  emoji       String   @default("🌍")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("experiences")
+}
+
+model TimelineEntry {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  emoji     String   @default("📌")
+  title     String
+  entryDate DateTime @map("entry_date")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("timeline_entries")
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model ConversationMember {
+  id             String   @id @default(cuid())
+  conversationId String   @map("conversation_id")
+  userId         String   @map("user_id")
+  joinedAt       DateTime @default(now()) @map("joined_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  conversationId String    @map("conversation_id")
+  senderId       String    @map("sender_id")
+  content        String
+  createdAt      DateTime  @default(now()) @map("created_at")
+  readAt         DateTime? @map("read_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Notification {
+  id              String           @id @default(cuid())
+  userId          String           @map("user_id")
+  type            NotificationType
+  content         String
+  relatedUserId   String?          @map("related_user_id")
+  relatedMomentId String?          @map("related_moment_id")
+  read            Boolean          @default(false)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  LIKE
+  COMMENT
+  FOLLOW
+  MESSAGE
+  TAG
+}
