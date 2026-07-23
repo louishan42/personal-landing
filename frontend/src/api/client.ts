@@ -26,8 +26,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch {
+    const apiUrl = import.meta.env.VITE_API_URL || "/api";
     throw new ApiError(
-      "Cannot connect to server. Run: cd backend && npm install && npm run dev",
+      import.meta.env.PROD && !import.meta.env.VITE_API_URL
+        ? "Backend not connected. Add VITE_API_URL on Vercel → https://personal-landing-buzb.onrender.com/api"
+        : `Cannot reach backend at ${apiUrl}. Check that the server is running.`,
       0
     );
   }
